@@ -112,7 +112,7 @@ PI_THREAD (FPScanner){
 	int args; //Holds arguments fed into the various commands.
 
 	//Open a new serial device and create the finger print scanner.
-	if((fd = serialOpen("/dev/ttyAMA0",BAUDRATE)) < 0){
+	if((fd = serialOpen("/dev/serial0",BAUDRATE)) < 0){
 		cerr << "An error occured: Couldn't open serial device";
 	}
 	else{
