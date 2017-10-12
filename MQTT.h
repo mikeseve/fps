@@ -13,10 +13,11 @@ public:
     void refresh();
     string getMessage();
     bool empty();
-    void message_callback(struct mosquitto *mosq, void *obj,
-    const struct mosquitto_message *message);
+
 
 private:
+    static void message_callback(struct mosquitto *mosq, void *obj,
+    const struct mosquitto_message *message);
     queue<string> messages;
     string hostname;
     int port;
