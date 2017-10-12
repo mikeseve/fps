@@ -5,7 +5,7 @@
 using std::cerr;
 using std::endl;
 
-MQTT::MQTT(string hostname_, string port_, string username_, string password_){
+MQTT::MQTT(string hostname_, int port_, string username_, string password_){
     mosquitto_lib_init();
     mosq = mosquitto_new (NULL, true, NULL);
     if(!mosq){
