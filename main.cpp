@@ -3,9 +3,7 @@
 #include <iostream>
 #include "FPS.h"
 #include <queue>
-#include <mosquitto.h>
 #include <string>
-#include <unistd.h>
 
 using std::string;
 using std::queue;
@@ -106,6 +104,7 @@ Message getMessage(Inbox inbox){
 	}
 	return newMessage;
 }
+
 
 PI_THREAD (FPScanner){
 	//Variables used to prevent a single finger press from being treated multiple times.
@@ -234,31 +233,10 @@ PI_THREAD (FPScanner){
 PI_THREAD (MQTTThread){
 	bool run = true;
 	Response returnedResponse;
-	struct mosquitto *mosq = NULL;
+	MQTT mqtt = MQTT(MQTT_HOSTNAME, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD);
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
-		mosquitto_lib_init();
-		mosq = mosquitto_new (NULL, true, NULL);
-		if (!mosq){
-			cerr << "Can't initialize Mosquitto Library" << endl;
-			sendCmdMsg(SCANNER, CLOSE);
-			run = false;
-
-		}
-		mosquitto_username_pw_set (mosq, MQTT_USERNAME, MQTT_PASSWORD);
-
-		int ret = mosquitto_connect (mosq, MQTT_HOSTNAME, MQTT_PORT, 0);
-		if (ret){
-			cerr << "Can't connect to Mosquitto server" << endl;
-			sendCmdMsg(SCANNER, CLOSE);
-			run = false;
-		}
-
-		for (int i = 0; i < 5; i++){
-			string testMQTTMessage = "From FPS Libarary";
-			cout << "sending message!" << endl;
-			ret = mosquitto_publish (mosq, NULL, MQTT_TOPIC,testMQTTMessage.size(), &testMQTTMessage[0], 0, false);
-		}
+		mqtt.publish(MQTT_TOPIC, "test mqtt class");
 		if(checkMail(MQTT)){
 			Message newMessage = getMessage(MQTT);
 			if(newMessage.messageType == RESPONSE){
@@ -275,12 +253,7 @@ PI_THREAD (MQTTThread){
 			}
 		}
 	}
-	sleep (1);
-
-	// Clean up Mosquitto
-	mosquitto_disconnect (mosq);
-	mosquitto_destroy (mosq);
-	mosquitto_lib_cleanup();
+	mqtt.cleanup();
 	return 0;
 }
 
