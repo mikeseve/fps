@@ -238,8 +238,8 @@ PI_THREAD (MQTTThread){
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
 		mqtt.publish(MQTT_TOPIC, "test mqtt class");
-		if(checkMail(MQTT)){
-			Message newMessage = getMessage(MQTT);
+		if(checkMail(MQTT_box)){
+			Message newMessage = getMessage(MQTT_box);
 			if(newMessage.messageType == RESPONSE){
 				//What to do with response... For test I print response parameters.
 				newMessage.response.printParams();
