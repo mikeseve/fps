@@ -1,0 +1,408 @@
+<a href="articles.html">&bull; Articles</a>
+<a href="computing_articles.html">&bull; Articles about computing</a>
+<a href="development_articles.html">&bull; Articles about software development</a>
+<a href="apache-integration.html">&bull; Apache integration software</a>
+
+<h1>Writing an MQTT client C for ActiveMQ from the ground up</h1>
+
+This article explains how to use the client runtime provided by the
+Mosquitto MQTT library to communicate with ActiveMQ, or with any other
+MQTT-aware message broker, using a C program. An alternative
+strategy for interfacing C code with ActiveMQ is to use the 
+CMS library <a href="cmstest.html">(see this article)</a>.
+Using MQTT has several advantages, however, not least of which is that
+the Mosquitto MQTT library is available pre-built for many platforms;
+even if you have to build it from source, it's a lot easier and 
+quicker than builing CMS. 
+<p/>
+This article assumes a reasonable knowledge of C programming, and a familiarity
+with using command-line tools to build and run code. As ever, the use
+of nothing more than the command-line in this article is intended to ensure
+that no details are concealed. Some knowledge of JMS will be helpful,
+because I frequently compared MQTT features with their equivalent
+JMS features.
+
+<h2>About MQTT</h2>
+
+MQTT is a lightweight, simple protocol for publish-subscribe messaging.
+Its main application is asynchronous inter-process communication, although
+its low overheads also make it practicable for decoupling software
+subsystems in the same process.
+<p/> 
+MQTT is popular in telementry and machine-to-machine applications, because
+support for it can (with care) add only a few Mb to an application's memory
+footprint. An MQTT message broker implemented in C, such as Mosquitto,
+might use only 10Mb or so. This compares very favourably indeed
+with Java-based message brokers. Of course, memory usage -- of any broker
+-- depends to some extent on client load, and on the kind of message
+persistence that is demanded by the application.
+<p/>
+As a protocol, MQTT offers a small subset of the 
+features supported by most Java-based
+brokers. The protocol offers no support for batches or transactions, 
+very limited support for managing a message backlog (that is, queueing),
+a very limited notion of non-volatile messaging,
+and many brokers do not support authentication (most modern ones
+do). The MQTT payload format is unspecified; this is very 
+different from JMS, where the application
+must specify the payload content (text, bytes, map.) An MQTT
+message is simply a variable-length byte array. So, whilst a Java-based
+message broker might support MQTT at the protocol level, it isn't safe
+to assume that Java-based <i>clients</i> of that broker will interoperate with 
+C/C++ MQTT clients -- this really depends on the kinds of messages that are
+used, and the way that data is encoded. 
+See the section "C/Java interoperability" below. 
+<p/>
+The Apache CMS library offers a more complete, C-based messaging runtime,
+which is broadly API-compatible with JMS (provided the underlying protocol
+has the necessary capabilities.) CMS, however, is a large library --
+at least a 20Mb memory footprint -- MQTT is adequate for a
+wide range of applications where CMS would be impractical.
+
+
+<h2>Obtaining the Mosquitto MQTT client runtime (and server)</h2>
+
+<h3>Obtaining a pre-built library</h3>
+
+For Linux, you might be able to obtain the Mosquitto client runtime, and 
+the server if necessary, from a standard repository. On Fedora,
+for example, I can do:
+
+<pre class="codeblock">
+# yum install mosquito-devel
+</pre>
+
+In fact this installs the server as well, but you're not forced to
+use it.
+<p/>
+Be aware that if you install from a repository, you will be limited
+to the library features that were felt necessary by the package 
+maintainer. So if, for example, you need SSL support and it was
+not included, it probably won't be possible to add it. Conversely,
+if you don't want the overhead introduced by including SSL  support,
+you won't be able to take it out. For the record, the Fedora 
+version of Mosquitto does not have SSL support built in.
+
+<h3>Building from source</h3>
+
+If Mosquitto is not available for your distribution, or you are running
+something other than Linux, or you need to enable or disable particular
+features, you will probably need to build from source.
+The source for the Mosquitto server and client runtime (both in one bundle)
+can be obtained from the <a href="http://mosquitto.org/download/">Mosquitto
+website</a>.
+
+<p/>
+Mosquitto has certain dependencies, most of which are likely to be 
+present on the build host already (particularly if it is Linux.) A
+notable exception is C-ares, which is a library
+for asynchronous DNS operations. This feature, along with a number of
+others that might be of limited application, can be disabled by 
+editing <code>config.mk</code> before building. One setting you
+will probably want to disable is <code>WITH_UUID</code>. This 
+functionality is only used for improving the randomness of client ID
+generation, and enabling it imposes a whole bunch of other dependencies,
+many of which will be irrelevant to messaging applications.
+<p/>
+By default, the build process will install files in <code>/usr/local</code>,
+which won't suit everybody. This, again, can be changed in 
+<code>config.mk</code> -- look for the line "<code>prefix=/usr/local</code>".
+<p/>
+After editing the configuration file, building and installation should
+be as simple as: 
+
+<pre class="codeblock">
+$ make
+# make install 
+</pre>
+
+<p/>
+
+Note that Mosquitto comes with very versatble MQTT test clients --
+<code>mosquitto_pub</code> and <code>mostquitto_sub</code>, for publishing and
+subscribing respectively. These work with MQTT on ActiveMQ, and might be useful
+for testing if your own code seems not to.
+ 
+
+<h2>Enabling MQTT support in ActiveMQ</h2>
+
+This should be straightforward -- it's just a matter of enabling the
+protocol. In <code>activemq.xml</code>, add this entry to
+<code>transportConnectors</code>:
+
+<pre class="codeblock" lang="xml">
+  <transportConnector name="mqtt" uri="mqtt://${bindAddress}:1883"/>
+</pre>
+
+You aren't forced to use port 1883, but this is the conventional one.
+ActiveMQ takes care of mapping MQTT operations to JMS operations, so far
+as that is possible. There is no support in MQTT for a lot of
+what JMS provides (transactionality, for example), or 
+for most of the extensions to JMS
+offered by ActiveMQ (such as message grouping). However, if you've already
+determined that your application's messaging needs can be met by 
+MQTT, that won't be a problem.
+
+
+<h2>Using the Mosquitto MQTT client API</h2>
+
+Unlike JMS, there is no standards-based API for MQTT. Different library vendors
+provide different APIs. This undoubtedly creates a problem with portability --
+moving from one client library to another is likely to be fiddly. However,
+because MQTT itself is so straightforward, this is unlikely to be <i>conceptually</i>
+difficult, merely time-consuming and tiresome. The conceptual simplicity does
+mean that a substantial application can wrap the specific MQTT implementation,
+and provide a vendor-neutral messaging interface to the rest of the application.
+<p/>
+THe Mosquitto client API is intended for use in C applications, and is not
+object-oriented. Ordinary C primitives are used for data structures. Text 
+strings, for example, are represented as a traditional <code>char[]</code>.
+Where character encoding is relevant -- and it nearly always is these days
+-- these strings are interpreted as UTF-8 encoded (this is a stipulation of
+the protocol, not the library). The message payload is not an object of
+any kind, merely a byte array. It is up to the application to interpret
+the payload as it sees fit, including handling encoding transformation
+of text messages where necessary. 
+<p/>
+The example below shows a simple example -- posting a small number of
+text (<code>char[]</code>) messages to a single topic. 
+I hope the comments are clear
+enough to explain what is going on. A few notes follow the listing.
+<p/>
+<pre class="codeblock" lang="java">
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <mosquitto.h>
+
+// Server connection parameters
+#define MQTT_HOSTNAME "localhost" 
+#define MQTT_PORT 1883
+#define MQTT_USERNAME "admin"
+#define MQTT_PASSWORD "admin"
+#define MQTT_TOPIC "test"
+
+/*
+ * Start here
+ */
+int main (int argc, char **argv)
+  {
+  struct mosquitto *mosq = NULL;
+ 
+  // Initialize the Mosquitto library
+  mosquitto_lib_init();
+
+  // Create a new Mosquitto runtime instance with a random client ID,
+  //  and no application-specific callback data.  
+  mosq = mosquitto_new (NULL, true, NULL);
+  if (!mosq)
+    {
+    fprintf (stderr, "Can't initialize Mosquitto library\n");
+    exit (-1);
+    }
+
+  mosquitto_username_pw_set (mosq, MQTT_USERNAME, MQTT_PASSWORD);
+
+  // Establish a connection to the MQTT server. Do not use a keep-alive ping
+  int ret = mosquitto_connect (mosq, MQTT_HOSTNAME, MQTT_PORT, 0);
+  if (ret)
+    {
+    fprintf (stderr, "Can't connect to Mosquitto server\n");
+    exit (-1);
+    }
+
+  int i;
+  char text[20];
+  for (i = 0; i < 10; i++)
+    {
+    sprintf (text, "Hello, World %d", i);
+    // Publish the message to the topic
+    ret = mosquitto_publish (mosq, NULL, MQTT_TOPIC, 
+      strlen (text), text, 0, false);
+    if (ret)
+      {
+      fprintf (stderr, "Can't publish to Mosquitto server\n");
+      exit (-1);
+      }
+    }
+
+  // We need a short delay here, to prevent the Mosquitto library being
+  //  torn down by the operating system before all the network operations
+  //  are finished.
+  sleep (1);
+
+  // Tidy up
+  mosquitto_disconnect (mosq);
+  mosquitto_destroy (mosq);
+  mosquitto_lib_cleanup();
+  
+  return 0;
+  }
+</pre>
+
+A few things to note about this example:
+
+<ul>
+<li>Passing a NULL value for the username to <code>mosquitto_username_pw_set()</code> disables authentication.
+However, ommiting the call completely will have the same effect. Authentication of any kind is a recent addition
+to the MQTT protocol, and some earlier brokers may fail to work at all if presented with authentication data. Note
+that MQTT does not seem to treat failed authentication as an error condition -- messages are silently dropped. </li>
+<li>MQTT supports a rudimentary notion of quality-of-service (QoS), and some of the Mosquitto APIs take a single
+integer argument to specify the QoS level. In this example, a QoS value of zero has arbitrarily been used. It is
+unlikely that ActiveMQ would interpret the QoS argument in a meaningful way (in fact, message prioritization is
+a hard problem in any message broker that tries to offer high throughput using consumer pre-fetch.)</li>
+<li>A text string supplied as a payload need not be null-terminated, and the terminating null will not
+be stored in this example, because the return value of <code>strlen()</code> does not count the null.
+However, the API calls that retrieve messages appear tacitly to put a null on the end of the message payload in memory,
+whatever the data type. This behaviour should probably not be relied on in a real application, however -- nothing
+in the documentation suggests that this is deliberate.</li>
+<li>The final argument to <code>mosquitto_publish()</code> indicates whether the message should be <i>retained</i>.
+A retained message is delivered to a subscriber as soon as it connects; a message that is not marked as
+retained will only be delivered to clients when they are actually connected. Marking a message as retained does 
+not imply any form of persistence -- only one message is retained, per topic.
+However, MQTT does have the notion of a <code>persistent session</code>, very much like a durable subscription in JMS messaging.
+With a persistent session, certainly classes of messages are stored when a subscriber is off-line; this
+storage may be persistent, depending on the application.
+ </li>
+<li>Support for persistent sessions, among other things, requires that each client have a unique ID. 
+This ID can be passed to <code>mosquitto_new(), but the library will randomly generate one if none is
+supplied (and persistent sessions are not required.)</code></li>
+<li>The Mosquitto library supports a whole range of callback functions, to indicate the status or progress
+of operations. No callbacks are used in this example; but a message consumer will typically implement at
+least one: a callback that is invoked when new data is published. Such a callback is presented in the 
+code sample below.
+</ul>
+
+The code needed to subscribe and consume is mostly the same as that for publishing. The example below
+shows the salient features (the full source is in the download bundle).
+
+<pre class="codeblock" lang="java">
+/*
+ * my_message_callback. 
+ * Called whenever a new message arrives
+ */
+void my_message_callback(struct mosquitto *mosq, void *obj, 
+    const struct mosquitto_message *message)
+  {
+  // Note: nothing in the Mosquitto docs or examples suggests that we
+  //  must free this message structure after processing it,
+  //  (nor that we can assume that it is null-terminated.)
+  printf ("Got message: %s\n", (char *)message->payload);
+  }
+
+  //...
+
+  mosquitto_subscribe (mosq, NULL, MQTT_TOPIC, 0);
+
+  // Specify the function to call when a new message is received
+  mosquitto_message_callback_set (mosq, my_message_callback);
+
+  // Wait for new messages
+  mosquitto_loop_forever (mosq, -1, 1);
+</pre>
+
+<h2>Compiling and running the example code</h2>
+
+The full code is available from the Download section at the end of
+this article. Naturally, you will need to change the connection
+parameters to match those of your server before building, 
+and you might need to change the authentication paramters,
+or remove them altogether if you are using an old MQTT broker that does
+not support authentication.
+<p/>
+The download bundle contains a <code>Makefile</code> to build the samples -- 
+one (<code>test-pub.c</code>) publishes ten messages, and
+another (<code>test-sub.c</code>) subscribes and consumes them.
+<p>
+The command lines, however, are very simple:
+
+<pre class="codeblock"> 
+$ gcc -s -Wall -o test-pub test-pub.c -lmosquitto -lssl -lcrypto -pthread -lcares
+</pre>
+
+If you disabled SSL and asynchronous DNS support when you built the Mosquitto 
+library (or they were not included by the package maintainer), you need
+not specify <code>-lssl</code>, <code>-lcrypto</code>, or <code>-lcares</code>.
+<p/>
+If your Mosquitto library -- typically <code>libmosquitto.so</code> on Linux --
+is not in one of the standard, system locations, you can use the <code>-L</code>
+switch to <code>gcc</code> to indicate the directory where it can be found.
+<p/>
+To run the example, just start the message broker, and execute
+
+<pre class="codeblock">
+$ ./test-sub
+</pre>
+
+in one console session and 
+
+<pre class="codeblock">
+$ ./test-pub
+</pre>
+
+in another. You should see the subscriber emit some "Hello, World!" messages whenever the 
+publisher executes.
+
+<h2>C/Java interoperability</h2>
+
+I have alluded several times to the fact that the MQTT message payload
+is simply a byte array. If your application uses only MQTT, and only
+C or C++ clients, then the handling of the payload is <i>entirely</i>
+a matter for the developer. The client library will not, and the broker
+should not, tamper with the payloads in flight.
+<p/>
+With a mixture of C and Java clients, however, more care is required. 
+Of the JMS message types available, <code>MapMessage</code> and
+<code>ObjectMessage</code> are likely to be of no relevance to a C
+program. <code>BytesMessage</code> maps nicely onto the byte array
+that MQTT imposes, so that is also unlikely to be a problem. The fiddly
+one is the <code>TextMessage</code>. It's extremely common in messaging
+applications to pass XML payloads in a <code>TextMessage</code>, and
+then the vexed question of character encoding arises. 
+<p/>
+The MQTT library will simply return to its application the message 
+payload the broker gives it. Thus it is up to the broker to do
+something useful with character encoding, if an MQTT client 
+consumes a Java-based <code>TextMessage</code>. The JVM has its own
+internal representation of text strings, but this is not normally exposed.
+Typically, when a Java application wants to manipulate the actual bytes
+that make up a string, it will ask the JVM to supply them with 
+some particular encoding (UTF-8, ASCII, etc). 
+<p/>
+Whatever format ActiveMQ stores Java strings in internally, it
+supplies them to MQTT clients encoded according to the platform
+encoding. On Linux this is nearly always UTF-8 these days. In practice
+this means that a client that uses the Mosquitto library can generally
+assume that any text messages it receives have UTF-8 encoding. Of course,
+most of the first 127 characters are the same as ASCII in this encoding.
+<p/>
+The GNU standard C library has no built-in functions (of which I am
+aware) for manipulating UTF-8 strings, or for converting them to 
+any other representation. However, there are a number of other
+libraries that can do such conversions if necessary. 
+<p/>
+For message brokers other than ActiveMQ, that have a Java API, 
+the way in which a Java <code>TextMessage</code> will be supplied
+to an MQTT client depends on the implementation and, as this
+kind of fine detail is rarely documented, some trial-and-error will
+likely be required to find out.
+
+<h2>Conclusion</h2>
+
+MQTT is a simple, fast alternative to more elaborate messaging protocols and libraries
+that is suitable for some applications. This article has explained how to 
+implement MQTT clients in C using the Mosquitto library. MQTT is not intended to be
+complex, but it does have a number of important features that are not demonstrated
+by my simple examples, such as persistent sessions and wills (yes, in the
+sense of last-will-and-testament.) 
+See the <a href="http://mosquitto.org/documentation/">Mosquitto
+documentation page</a> form more information on these topics.
+
+
+<h2>Downloads</h2>
+
+<a href="mosquitto-test.zip">C source code bundle</a>
+
