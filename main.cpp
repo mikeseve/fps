@@ -235,9 +235,12 @@ PI_THREAD (MQTTThread){
 	bool run = true;
 	Response returnedResponse;
 	MQTT mqtt = MQTT(MQTT_HOSTNAME, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD);
+	mqtt.subscribe(MQTT_TOPIC);
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
-		mqtt.publish(MQTT_TOPIC, "test mqtt class");
+		//mqtt.publish(MQTT_TOPIC, "test mqtt class");
+		mqtt.refresh();
+		
 		if(checkMail(MQTT_box)){
 			Message newMessage = getMessage(MQTT_box);
 			if(newMessage.messageType == RESPONSE){

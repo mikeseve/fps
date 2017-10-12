@@ -22,7 +22,6 @@ MQTT::MQTT(string hostname_, int port_, string username_, string password_){
         username = username_;
         password = password_;
     }
-    mosquitto_message_callback_set (mosq, message_callback);
 }
 
 bool MQTT::publish(string topic, string message){
@@ -43,6 +42,7 @@ void MQTT::cleanup(){
 }
 
 void MQTT::subscribe(string topic){
+    mosquitto_message_callback_set(mosq, message_callback);
     mosquitto_subscribe (mosq, NULL, &topic[0], 0);
 }
 void MQTT::refresh(){
@@ -58,6 +58,7 @@ bool MQTT::empty(){
 }
 void MQTT::message_callback(struct mosquitto *mosq, void *obj,
 const struct mosquitto_message *message){
-    messages.push(message->payload);
-    std::cout << "Message: " << (char *)message->payload << std::endl;
+   // messages.push(message->payload);
+    std::cout << "Actually got here...";
+	std::cout << "Message: " << (char *)message->payload << std::endl;
 }
