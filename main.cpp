@@ -3,7 +3,10 @@
 #include <iostream>
 #include "FPS.h"
 #include <queue>
+#include <mosquitto.h>
+#include <string>
 
+using std::string;
 using std::queue;
 using std::cout;
 using std::cerr;
@@ -13,6 +16,13 @@ using std::cin;
 #define BAUDRATE 9600
 #define DEFAULTSTATE IDENTIFY
 
+// Server connection parameters
+#define MQTT_HOSTNAME "futurehaus.cs.vt.edu"
+#define MQTT_PORT 1883
+#define MQTT_USERNAME "futurehaus"
+#define MQTT_PASSWORD "HokieDVE"
+#define MQTT_TOPIC "doorTest"
+
 
 enum Inbox{MQTT, SCANNER, MAIN};//Used to determine which thread a message is for. Also used to piLock and piUnlock the correct variables.
 enum FPSCommandStates{IDLE, ENROLL, IDENTIFY, VERIFY, DELETEALL, DELETEID, ISPRESSFINGER, CLOSE}; //List of command states the FPS can perform
@@ -21,7 +31,7 @@ enum MessageTypes{COMMAND, RESPONSE}; //Used to tell the type of a message.
 //Message:
 //Structure used to organize communication between threads.
 struct Message{
-	MessageTypes messageType; 
+	MessageTypes messageType;
 	FPSCommandStates command; //Command to be performed if messageType is COMMAND.
 	int args; //Additional information (such as ID to be verified).
 	Response response; //Information given by sensor after executing a command if messageType is RESPONSE
@@ -104,7 +114,7 @@ PI_THREAD (FPScanner){
 	int fd; //Id returned from serial Open. Used to create new FPS object.
 	FPS *fps = new FPS(); //Object representing the Scanner.
 
-	bool loop = true; //loop variable for main while loop. 
+	bool loop = true; //loop variable for main while loop.
 
 	Response *returnedResponse; //Used to get responses from commands.
 
@@ -181,7 +191,7 @@ PI_THREAD (FPScanner){
 					if(returnedResponse->failed) sendRspMsg(MQTT,*returnedResponse);
 					else{
 						returnedResponse = fps->Verify(args);
-						sendRspMsg(MQTT, *returnedResponse);	
+						sendRspMsg(MQTT, *returnedResponse);
 					}
 					currentCommand = DEFAULTSTATE;
 				}
@@ -225,6 +235,28 @@ PI_THREAD (MQTTThread){
 	Response returnedResponse;
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
+		struct mosquitto *mosq = NULL;
+		mosquitto_lib_init();
+		mosq = mosquitto_new (NULL, true, NULL);
+		if (!mosq){
+			cerr << "Can't initialize Mosquitto Library" << endl;
+			sendCmdMsg(SCANNER, CLOSE);
+			return -1;
+
+		}
+		mosquitto_username_pw_set (mosq, MQTT_USERNAME, MQTT_PASSWORD);
+
+		int ret = mosquitto_connect (mosq, MQTT_HOSTNAME, MQTT_PORT, 0);
+		if (ret){
+			cerr << "Can't connect to Mosquitto server" << endl;
+			sendCmdMsg(SCANNER, CLOSE);
+			return -1;
+		}
+
+		for (int i = 0; i < 5; i++){
+			string testMQTTMessage = "From FPS Libarary";
+			ret = mosquitto_publish (mosq, NULL, MQTT_TOPIC,testMQTTMessage.size(), testMQTTMessage, 0, false);
+		}
 		if(checkMail(MQTT)){
 			Message newMessage = getMessage(MQTT);
 			if(newMessage.messageType == RESPONSE){
@@ -241,6 +273,12 @@ PI_THREAD (MQTTThread){
 			}
 		}
 	}
+	sleep (1);
+
+	// Clean up Mosquitto
+	mosquitto_disconnect (mosq);
+	mosquitto_destroy (mosq);
+	mosquitto_lib_cleanup();
 	return 0;
 }
 
