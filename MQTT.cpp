@@ -12,7 +12,7 @@ MQTT::MQTT(string hostname_, int port_, string username_, string password_){
         cerr << "Can't initalize mosquitto lib" << endl;
     }
     mosquitto_username_pw_set (mosq, &username_[0], &password_[0]);
-    int ret = mosquitto_connect (mosq, &hostname_[0], &port_[0], 0);
+    int ret = mosquitto_connect (mosq, &hostname_[0], port_, 0);
     if(ret){
         cerr << "Can't connect to mosquitto server" << endl;
     }
@@ -20,7 +20,7 @@ MQTT::MQTT(string hostname_, int port_, string username_, string password_){
         hostname = hostname_;
         port = port_;
         username = username_;
-        password = password_l
+        password = password_;
     }
 }
 
