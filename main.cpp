@@ -5,13 +5,14 @@
 #include <queue>
 #include <mosquitto.h>
 #include <string>
+#include <unistd.h>
 
 using std::string;
 using std::queue;
 using std::cout;
 using std::cerr;
 using std::cin;
-
+using std::endl;
 //Defines
 #define BAUDRATE 9600
 #define DEFAULTSTATE IDENTIFY
@@ -233,15 +234,15 @@ PI_THREAD (FPScanner){
 PI_THREAD (MQTTThread){
 	bool run = true;
 	Response returnedResponse;
+	struct mosquitto *mosq = NULL;
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
-		struct mosquitto *mosq = NULL;
 		mosquitto_lib_init();
 		mosq = mosquitto_new (NULL, true, NULL);
 		if (!mosq){
 			cerr << "Can't initialize Mosquitto Library" << endl;
 			sendCmdMsg(SCANNER, CLOSE);
-			return -1;
+			run = false;
 
 		}
 		mosquitto_username_pw_set (mosq, MQTT_USERNAME, MQTT_PASSWORD);
@@ -250,12 +251,13 @@ PI_THREAD (MQTTThread){
 		if (ret){
 			cerr << "Can't connect to Mosquitto server" << endl;
 			sendCmdMsg(SCANNER, CLOSE);
-			return -1;
+			run = false;
 		}
 
 		for (int i = 0; i < 5; i++){
 			string testMQTTMessage = "From FPS Libarary";
-			ret = mosquitto_publish (mosq, NULL, MQTT_TOPIC,testMQTTMessage.size(), testMQTTMessage, 0, false);
+			cout << "sending message!" << endl;
+			ret = mosquitto_publish (mosq, NULL, MQTT_TOPIC,testMQTTMessage.size(), &testMQTTMessage[0], 0, false);
 		}
 		if(checkMail(MQTT)){
 			Message newMessage = getMessage(MQTT);
