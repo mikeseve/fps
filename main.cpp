@@ -2,6 +2,7 @@
 #include <wiringSerial.h>
 #include <iostream>
 #include "FPS.h"
+#include "MQTT.h"
 #include <queue>
 #include <string>
 
@@ -23,7 +24,7 @@ using std::endl;
 #define MQTT_TOPIC "doorTest"
 
 
-enum Inbox{MQTT, SCANNER, MAIN};//Used to determine which thread a message is for. Also used to piLock and piUnlock the correct variables.
+enum Inbox{MQTT_box, SCANNER, MAIN};//Used to determine which thread a message is for. Also used to piLock and piUnlock the correct variables.
 enum FPSCommandStates{IDLE, ENROLL, IDENTIFY, VERIFY, DELETEALL, DELETEID, ISPRESSFINGER, CLOSE}; //List of command states the FPS can perform
 enum MessageTypes{COMMAND, RESPONSE}; //Used to tell the type of a message.
 
@@ -49,7 +50,7 @@ void sendCmdMsg(Inbox messageDestination, FPSCommandStates command, int args = -
 	newMessage.args = args;
 	piLock((int)messageDestination);
 	if(messageDestination == SCANNER) FPSInbox.push(newMessage);
-	else if(messageDestination == MQTT) MQTTInbox.push(newMessage);
+	else if(messageDestination == MQTT_box) MQTTInbox.push(newMessage);
 	else MainInbox.push(newMessage);
 	piUnlock((int)messageDestination);
 }
@@ -63,7 +64,7 @@ void sendRspMsg(Inbox messageDestination, Response response, int args = -1){
 	newMessage.args = args;
 	piLock(messageDestination);
 	if(messageDestination == SCANNER) FPSInbox.push(newMessage);
-	else if(messageDestination == MQTT) MQTTInbox.push(newMessage);
+	else if(messageDestination == MQTT_box) MQTTInbox.push(newMessage);
 	else MainInbox.push(newMessage);
 	piUnlock(messageDestination);
 }
@@ -74,7 +75,7 @@ bool checkMail(Inbox inbox){
 		bool returnValue = true;
 		piLock((int)inbox);
 
-		if(inbox == MQTT && MQTTInbox.empty()) returnValue = false;
+		if(inbox == MQTT_box && MQTTInbox.empty()) returnValue = false;
 		else if(inbox == SCANNER && FPSInbox.empty()) returnValue = false;
 		else if(inbox == MAIN && MainInbox.empty()) returnValue = false;
 
@@ -92,7 +93,7 @@ Message getMessage(Inbox inbox){
 			newMessage = FPSInbox.front();
 			FPSInbox.pop();
 		}
-		else if(inbox == MQTT){
+		else if(inbox == MQTT_box){
 				newMessage = MQTTInbox.front();
 				MQTTInbox.pop();
 		}
@@ -165,7 +166,7 @@ PI_THREAD (FPScanner){
 				fps->BlinkLED(250);
 				while(fps->CheckEnrolledID(args)) args++;
 				returnedResponse = fps->Enroll(args);
-				sendRspMsg(MQTT, *returnedResponse);
+				sendRspMsg(MQTT_box, *returnedResponse);
 				currentCommand = DEFAULTSTATE;
 				break;
 			case IDENTIFY:
@@ -174,10 +175,10 @@ PI_THREAD (FPScanner){
 				else{
 					newFingerPressed = false; //Used with fingerState statemachine above to keep the scanner from constantly identifying a finger that was only placed once.
 					returnedResponse = fps->captureFinger(false);
-					if(returnedResponse->failed) sendRspMsg(MQTT, *returnedResponse);
+					if(returnedResponse->failed) sendRspMsg(MQTT_box, *returnedResponse);
 					else{
 						returnedResponse = fps->Identify();
-						sendRspMsg(MQTT, *returnedResponse);
+						sendRspMsg(MQTT_box, *returnedResponse);
 					}
 					currentCommand = DEFAULTSTATE;
 				}
@@ -188,10 +189,10 @@ PI_THREAD (FPScanner){
 				if(!fps->IsFingerPressed()) break;
 				else{
 					returnedResponse = fps->captureFinger(true);
-					if(returnedResponse->failed) sendRspMsg(MQTT,*returnedResponse);
+					if(returnedResponse->failed) sendRspMsg(MQTT_box,*returnedResponse);
 					else{
 						returnedResponse = fps->Verify(args);
-						sendRspMsg(MQTT, *returnedResponse);
+						sendRspMsg(MQTT_box, *returnedResponse);
 					}
 					currentCommand = DEFAULTSTATE;
 				}
@@ -200,20 +201,20 @@ PI_THREAD (FPScanner){
 				//Detele all IDs on the scanner.
 				returnedResponse = fps->deleteAll();
 				currentCommand = DEFAULTSTATE;
-				sendRspMsg(MQTT, *returnedResponse);
+				sendRspMsg(MQTT_box, *returnedResponse);
 				break;
 			case DELETEID:
 				//Delete the specified ID on the scanner.
 				returnedResponse = fps->deleteID(args);
 				currentCommand = DEFAULTSTATE;
-				sendRspMsg(MQTT, *returnedResponse);
+				sendRspMsg(MQTT_box, *returnedResponse);
 				break;
 			case ISPRESSFINGER:
 				//Determines if there is a finger on the scanner. If so, params[0] in the response is 1, otherwise its 0.
 				if(fps->IsFingerPressed())returnedResponse->params[0] = 1;
 				else returnedResponse->params[0] = 0;
 				returnedResponse->command = IsPressFinger;
-				sendRspMsg(MQTT, *returnedResponse);
+				sendRspMsg(MQTT_box, *returnedResponse);
 				currentCommand = DEFAULTSTATE;
 				break;
 			case CLOSE:
@@ -274,7 +275,7 @@ int main(){
 			cout << "What ID would you like to Delete?: \n";
 			cin >> args;
 		}
-		sendCmdMsg(MQTT, (FPSCommandStates)input, args);
+		sendCmdMsg(MQTT_box, (FPSCommandStates)input, args);
 		if(input == 7){
 				while(1){
 					if(checkMail(MAIN)) return 1;
