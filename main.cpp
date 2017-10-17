@@ -21,7 +21,8 @@ using std::endl;
 #define MQTT_PORT 1883
 #define MQTT_USERNAME "futurehaus"
 #define MQTT_PASSWORD "HokieDVE"
-#define MQTT_TOPIC "doorTest"
+#define MQTT_SUB_TOPIC "frontDoorFPSSub"
+#define MQTT_PUB_TOPIC "frontDoorFPSPub"
 
 
 enum Inbox{MQTT_box, SCANNER, MAIN};//Used to determine which thread a message is for. Also used to piLock and piUnlock the correct variables.
@@ -234,17 +235,43 @@ PI_THREAD (FPScanner){
 PI_THREAD (MQTTThread){
 	bool run = true;
 	Response returnedResponse;
+
 	MQTT mqtt = MQTT(MQTT_HOSTNAME, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD);
-	mqtt.subscribe(MQTT_TOPIC);
+	
+	mqtt.publish(MQTT_PUB_TOPIC, "custom Test publish");
+
+	mqtt.subscribe(MQTT_SUB_TOPIC);
+
 	while(run){
 		//Check for mail and perform the required operation if there is mail.
-		//mqtt.publish(MQTT_TOPIC, "test mqtt class");
+		
 		mqtt.refresh();
+		while(!mqtt.empty()){
+			//an mqtt message was received...
+			string newMessage = mqtt.getMessage();
+			cout << "Command Received: " << newMessage << endl;
+			
+			if(newMessage.size() > 0){
+				int command = newMessage.at(0) - 48;
+				int args = 0;
+				//Send messages in the format <command,args>
+				if(newMessage.size() > 2) args = (int)(newMessage[2]) - 48;
+				cout << "Command Given: " << command << " With args: " << args << endl;
+				sendCmdMsg(SCANNER, (FPSCommandStates)command, args);
+				if((FPSCommandStates)command == CLOSE){
+					sendCmdMsg(SCANNER, CLOSE);
+					run = false;
+				}
+			}
+		}
 		
 		if(checkMail(MQTT_box)){
 			Message newMessage = getMessage(MQTT_box);
 			if(newMessage.messageType == RESPONSE){
 				//What to do with response... For test I print response parameters.
+				
+				if(newMessage.response.failed) mqtt.publish(MQTT_PUB_TOPIC, "Command Failed!");
+				else mqtt.publish(MQTT_PUB_TOPIC, "Command Succeded!");
 				newMessage.response.printParams();
 			}
 			else{
