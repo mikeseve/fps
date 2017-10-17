@@ -14,14 +14,12 @@ public:
     string getMessage();
     bool empty();
 
-
 private:
-    static void message_callback(struct mosquitto *mosq, void *obj,
-    const struct mosquitto_message *message);
-    queue<string> messages;
+    static void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message);
+    static queue<string> messages;
     string hostname;
     int port;
     string username;
     string password;
     struct mosquitto *mosq = NULL;
-};
+}; 
